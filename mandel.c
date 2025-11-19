@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include "jpegrw.h"
+#include <math.h>
 
 // local routines
 static int iteration_to_color( int i, int max );
@@ -18,14 +19,18 @@ static void compute_image( imgRawImage *img, double xmin, double xmax,
 									double ymin, double ymax, int max );
 static void show_help();
 
-
+int opt;
+int number = 1; // number of child processes
+int workload = 50; // 50 images is the workload
+double scale = .2; // scale multiplier
 int main( int argc, char *argv[] )
 {
 	char c;
 
 	// These are the default configuration values used
 	// if no command line arguments are given.
-	const char *outfile = "mandel.jpg";
+	const char *outfile = "mandel%d.jpg";
+	char newName[50];
 	double xcenter = 0;
 	double ycenter = 0;
 	double xscale = 4;
@@ -37,7 +42,7 @@ int main( int argc, char *argv[] )
 	// For each command line argument given,
 	// override the appropriate configuration value.
 
-	while((c = getopt(argc,argv,"x:y:s:W:H:m:o:h"))!=-1) {
+	while((c = getopt(argc,argv,"x:y:s:W:H:m:o:n:h"))!=-1) {
 		switch(c) 
 		{
 			case 'x':
@@ -61,45 +66,55 @@ int main( int argc, char *argv[] )
 			case 'o':
 				outfile = optarg;
 				break;
+			case 'n':
+				number = atoi(optarg);
+            	break;
 			case 'h':
 				show_help();
 				exit(1);
 				break;
 		}
-	}
+	}		
+	double chunkSize = (workload / number);  // number of items each child proecesses
+	float remainder = workload % number;    // remainder if workload doesnt divide evenly
+	//int work = ceiling(50.0/children)
+	// add check if current image over or = to 50, exit
+	int imageNumber;
 
-	// Calculate y scale based on x scale (settable) and image sizes in X and Y (settable)
-	yscale = xscale / image_width * image_height;
-
-	// Display the configuration of the image.
-	printf("mandel: x=%lf y=%lf xscale=%lf yscale=%1f max=%d outfile=%s\n",xcenter,ycenter,xscale,yscale,max,outfile);
-
-	// Create a raw image of the appropriate size.
-	imgRawImage* img = initRawImage(image_width,image_height);
-
-	// Fill it with a black
-	setImageCOLOR(img,0);
-
-	// Compute the Mandelbrot image
-	compute_image(img,xcenter-xscale/2,xcenter+xscale/2,ycenter-yscale/2,ycenter+yscale/2,max);
-
-	// Save the image in the stated file.
-	storeJpegImageFile(img,outfile);
-
-	// free the mallocs
-	freeRawImage(img);
+	for (int i = 0; i<50; i++){
+        pid_t pid = fork();
+		scale = scale * .97;
+			if (pid==-1){
+            	perror("fork failed");
+            	exit(EXIT_FAILURE);
+        	} else if (pid == 0){
+				for(imageNumber = 0; imageNumber < chunkSize; imageNumber++){
+					sprintf(newName, outfile,i);
+					// Calculate y scale based on x scale (settable) and image sizes in X and Y (settable)
+					yscale  = (xscale*scale) / image_width * image_height;
+					// Display the configuration of the image.
+					printf("mandel: x=%lf y=%lf xscale=%lf yscale=%1f max=%d outfile=%s\n",xcenter,ycenter,xscale,yscale,max,newName);
+					// Create a raw image of the appropriate size.
+					imgRawImage* img = initRawImage(image_width,image_height);
+					// Fill it with a black
+					setImageCOLOR(img,0);
+					// Compute the Mandelbrot image
+					compute_image(img,xcenter-xscale/2,xcenter+xscale/2,ycenter-yscale/2,ycenter+yscale/2,max);
+					// Save the image in the stated file.
+					storeJpegImageFile(img,newName);
+					// free the mallocs
+					freeRawImage(img);
+					exit(0);
+				}
+			}
+		}
 
 	return 0;
 }
-
-
-
-
 /*
 Return the number of iterations at point x, y
 in the Mandelbrot space, up to a maximum of max.
 */
-
 int iterations_at_point( double x, double y, int max )
 {
 	double x0 = x;
@@ -120,12 +135,10 @@ int iterations_at_point( double x, double y, int max )
 
 	return iter;
 }
-
 /*
 Compute an entire Mandelbrot image, writing each point to the given bitmap.
 Scale the image to the range (xmin-xmax,ymin-ymax), limiting iterations to "max"
 */
-
 void compute_image(imgRawImage* img, double xmin, double xmax, double ymin, double ymax, int max )
 {
 	int i,j;
