@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include "jpegrw.h"
 #include <math.h>
+#include <sys/wait.h>
+
 
 // local routines
 static int iteration_to_color( int i, int max );
@@ -104,6 +106,7 @@ int main( int argc, char *argv[] )
 					storeJpegImageFile(img,newName);
 					// free the mallocs
 					freeRawImage(img);
+					sleep(2);
 					exit(0);
 				}
 			}
